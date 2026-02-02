@@ -1,0 +1,42 @@
+[[tasks]]
+name = "local_backup"
+cron = "@every 10s"
+source_type = "local"
+source_path = "./test_source"
+source_regex = '.*\.txt$'
+target_type = "local"
+target_path = "./test_target"
+retention_days = 7
+source_newer_days = 30
+
+# Example SFTP Task
+# [[tasks]]
+# name = "sftp_download"
+# cron = "0 0 * * *"
+# source_type = "sftp"
+# source_path = "/remote/path"
+# source_regex = ".*"
+# target_type = "local"
+# target_path = "./downloads"
+# retention_days = 30
+# [tasks.source_auth]
+# host = "example.com"
+# port = 22
+# user = "user"
+# password = "password"
+
+# Example FTP Task
+# [[tasks]]
+# name = "ftp_upload"
+# cron = "0 0 * * *"
+# source_type = "local"
+# source_path = "./uploads"
+# source_regex = ".*"
+# target_type = "ftp"
+# target_path = "/remote/ftp/path"
+# retention_days = 30
+# [tasks.target_auth]
+# host = "ftp.example.com"
+# port = 21
+# user = "ftpuser"
+# password = "ftppassword"
