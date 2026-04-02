@@ -3,6 +3,7 @@ package protocols
 import (
 	"fmt"
 	"io"
+	"net"
 	"path"
 	"time"
 
@@ -18,10 +19,11 @@ type SFTPFileSystem struct {
 	RootPath string
 	client   *sftp.Client
 	sshConn  *ssh.Client
+	tcpConn  net.Conn
 }
 
 func (s *SFTPFileSystem) Init() error {
-	config := &ssh.ClientConfig{
+	sshConfig := &ssh.ClientConfig{
 		User: s.User,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(s.Password),
@@ -31,15 +33,25 @@ func (s *SFTPFileSystem) Init() error {
 	}
 
 	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
-	conn, err := ssh.Dial("tcp", addr, config)
+
+	// Use net.DialTimeout to retain the raw TCP connection, so we can
+	// force-close it later to prevent goroutine leaks.
+	tcpConn, err := net.DialTimeout("tcp", addr, sshConfig.Timeout)
 	if err != nil {
 		return err
 	}
-	s.sshConn = conn
 
-	client, err := sftp.NewClient(conn)
+	sshConn, chans, reqs, err := ssh.NewClientConn(tcpConn, addr, sshConfig)
 	if err != nil {
-		conn.Close()
+		tcpConn.Close()
+		return err
+	}
+	s.tcpConn = tcpConn
+	s.sshConn = ssh.NewClient(sshConn, chans, reqs)
+
+	client, err := sftp.NewClient(s.sshConn)
+	if err != nil {
+		s.sshConn.Close()
 		return err
 	}
 	s.client = client
@@ -47,11 +59,22 @@ func (s *SFTPFileSystem) Init() error {
 }
 
 func (s *SFTPFileSystem) Close() error {
+	// Set a short deadline on the TCP connection so that if sftp/ssh Close()
+	// tries to send/receive on a dead connection, it will timeout rather
+	// than block forever (which causes goroutine leaks).
+	if s.tcpConn != nil {
+		s.tcpConn.SetDeadline(time.Now().Add(10 * time.Second))
+	}
 	if s.client != nil {
 		s.client.Close()
 	}
 	if s.sshConn != nil {
 		s.sshConn.Close()
+	}
+	// Force-close the raw TCP connection to guarantee all SSH goroutines
+	// (handshake, mux, channel handler, session wait, sftp pipe) exit.
+	if s.tcpConn != nil {
+		s.tcpConn.Close()
 	}
 	return nil
 }
