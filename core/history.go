@@ -43,8 +43,8 @@ func (hm *HistoryManager) Load() error {
 }
 
 func (hm *HistoryManager) Save() error {
-	hm.mu.RLock()
-	defer hm.mu.RUnlock()
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
 
 	data, err := json.MarshalIndent(hm.Tasks, "", "  ")
 	if err != nil {
@@ -90,4 +90,34 @@ func (th *TaskHistory) Remove(path string) {
 	th.mu.Lock()
 	defer th.mu.Unlock()
 	delete(th.Records, path)
+}
+
+// MarshalJSON implements json.Marshaler for concurrent-safe JSON serialization.
+// Without this, json.MarshalIndent in Save() would read Records without holding
+// the lock, racing with Add()/Remove() in other goroutines.
+func (th *TaskHistory) MarshalJSON() ([]byte, error) {
+	th.mu.RLock()
+	defer th.mu.RUnlock()
+	return json.Marshal(struct {
+		Records map[string]time.Time `json:"records"`
+	}{
+		Records: th.Records,
+	})
+}
+
+// UnmarshalJSON implements json.Unmarshaler for concurrent-safe JSON deserialization.
+func (th *TaskHistory) UnmarshalJSON(data []byte) error {
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	var aux struct {
+		Records map[string]time.Time `json:"records"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	th.Records = aux.Records
+	if th.Records == nil {
+		th.Records = make(map[string]time.Time)
+	}
+	return nil
 }
