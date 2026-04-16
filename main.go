@@ -14,7 +14,15 @@ import (
 func main() {
 	configPath := flag.String("config", "config.toml", "Path to config file")
 	historyPath := flag.String("history", "history.json", "Path to history file")
+	lockPath := flag.String("lock", "filetransferhx.lock", "Path to lock file")
 	flag.Parse()
+
+	// 0. Acquire process lock to prevent multiple instances
+	lock, err := acquireLock(*lockPath)
+	if err != nil {
+		log.Fatalf("Failed to acquire lock: %v", err)
+	}
+	defer lock.Release()
 
 	// 1. Load Config
 	cfg, err := config.LoadConfig(*configPath)
@@ -44,5 +52,7 @@ func main() {
 
 	log.Println("Shutting down...")
 	runner.Stop()
-	hm.Save()
+	if err := hm.Save(); err != nil {
+		log.Printf("Error saving history on shutdown: %v", err)
+	}
 }
