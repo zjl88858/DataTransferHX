@@ -54,7 +54,9 @@ func (tm *TransferManager) RunTask(task config.Task) error {
 	}
 
 	// 5. Save History
-	tm.HistoryManager.Save()
+	if err := tm.HistoryManager.Save(); err != nil {
+		log.Printf("Error saving history for task %s: %v", task.Name, err)
+	}
 	log.Printf("Finished task: %s", task.Name)
 	return nil
 }
@@ -195,7 +197,8 @@ func (tm *TransferManager) cleanup(dstFS protocols.FileSystem, task config.Task,
 			// Check if file exists before trying to delete
 			_, err := dstFS.Stat(relPath)
 			if err != nil {
-				// File likely doesn't exist, skip
+				// File doesn't exist, remove stale history record
+				history.Remove(relPath)
 				continue
 			}
 
@@ -203,6 +206,9 @@ func (tm *TransferManager) cleanup(dstFS protocols.FileSystem, task config.Task,
 			err = dstFS.Remove(relPath)
 			if err != nil {
 				log.Printf("Failed to remove %s: %v", relPath, err)
+			} else {
+				// Successfully removed, clean up history record
+				history.Remove(relPath)
 			}
 		}
 	}
